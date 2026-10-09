@@ -1,0 +1,62 @@
+openapi: 3.0.3
+info:
+  title: Pokédex API (demo TP AWS para Node.js)
+  version: 1.0.0
+  description: Misma app Express desplegable en EC2, Elastic Beanstalk, contenedor o Lambda + API Gateway.
+servers:
+  - url: http://localhost:8080
+    description: Local
+paths:
+  /health:
+    get:
+      summary: Estado del servicio (lo usa el health check del balanceador / Beanstalk)
+      responses:
+        '200':
+          description: Servicio sano
+          content:
+            application/json:
+              example: { status: ok, runtime: proceso-node, env: local }
+  /api/v1/pokemon/{nombre}:
+    get:
+      summary: Consultar un Pokémon (nuestra API consulta a la PokeAPI y devuelve solo los campos necesarios)
+      parameters:
+        - { name: nombre, in: path, required: true, schema: { type: string, pattern: '^[a-zA-Z0-9-]{1,50}$' } }
+      responses:
+        '200':
+          description: El Pokémon
+          content:
+            application/json:
+              example: { id: 25, nombre: pikachu, tipos: [electric], alturaDm: 4, pesoHg: 60, imagen: 'https://...' }
+        '400': { description: Nombre inválido }
+        '404': { description: No existe en la PokeAPI }
+        '502': { description: La PokeAPI no respondió }
+  /api/v1/favoritos:
+    get:
+      summary: Listar favoritos
+      responses:
+        '200': { description: Lista de Pokémon favoritos }
+    post:
+      summary: Agregar un Pokémon a favoritos (se valida contra la PokeAPI)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nombre]
+              properties:
+                nombre: { type: string, example: pikachu }
+      responses:
+        '201': { description: Agregado }
+        '400': { description: Nombre inválido }
+        '404': { description: No existe en la PokeAPI }
+        '409': { description: Ya estaba en favoritos }
+        '502': { description: La PokeAPI no respondió }
+  /api/v1/favoritos/{nombre}:
+    parameters:
+      - { name: nombre, in: path, required: true, schema: { type: string } }
+    delete:
+      summary: Quitar de favoritos
+      responses:
+        '204': { description: Quitado }
+        '404': { description: No estaba en favoritos }

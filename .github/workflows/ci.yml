@@ -1,0 +1,27 @@
+name: Integracion Continua Node.js
+
+# Trigger: push a main y todo Pull Request (obliga a pasar los tests antes de fusionar).
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  testear-api:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: npm
+      - name: Instalar módulos
+        run: npm ci
+      - name: Correr tests
+        run: npm test
+      - name: Auditar dependencias (OWASP - Software Supply Chain Failures)
+        run: npm audit --audit-level=high
+      - name: Construir la imagen Docker
+        run: docker build -t demo-api-aws .

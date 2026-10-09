@@ -1,0 +1,96 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  TP AWS para Node.js - Opción serverless:
+  API Gateway (HTTP API) -> Lambda (Node.js 22) -> CloudWatch (logs + alarmas).
+
+Parameters:
+  AppEnv:
+    Type: String
+    Default: produccion
+    AllowedValues: [desarrollo, produccion]
+  AlertEmail:
+    Type: String
+    Description: Email que recibe las alarmas de CloudWatch
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures: [arm64]          # Graviton: soportado por todos los runtimes y más barato por GB-s
+    Timeout: 10                     # el máximo posible es 900 s; una API HTTP no debería necesitar más
+    MemorySize: 256                 # en Lambda la CPU escala con la memoria
+    Environment:
+      Variables:
+        APP_ENV: !Ref AppEnv
+
+Resources:
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: src/lambda.handler
+      Events:
+        Todo:
+          Type: HttpApi             # API Gateway HTTP API (más simple y barata que REST API)
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+        Raiz:
+          Type: HttpApi
+          Properties:
+            Path: /
+            Method: ANY
+
+  # Retención explícita: si no se define, los logs de Lambda se guardan para siempre y se siguen pagando.
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ApiFunction}
+      RetentionInDays: 30
+
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref AlertEmail
+
+  ErroresAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: La función Lambda registró errores
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ApiFunction
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+
+  LatenciaAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Latencia p95 alta
+      Namespace: AWS/Lambda
+      MetricName: Duration
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ApiFunction
+      ExtendedStatistic: p95
+      Period: 60
+      EvaluationPeriods: 5
+      Threshold: 2000               # milisegundos
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+
+Outputs:
+  ApiUrl:
+    Description: URL base de la API
+    Value: !Sub https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com
